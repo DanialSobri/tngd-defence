@@ -10,12 +10,17 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+# When Nginx serves the app under /api (proxy_pass strips /api), set ROOT_PATH=/api
+# so Swagger/ReDoc load OpenAPI from /api/openapi.json instead of /openapi.json.
+_root_path = os.getenv("ROOT_PATH", "").strip().rstrip("/")
+
 app = FastAPI(
     title="TNG Shield Risk API",
     version="0.1.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    root_path=_root_path,
 )
 RULES_PATH = Path(__file__).with_name("rules.txt")
 
@@ -241,12 +246,12 @@ def _normalize_risk_result(
     )
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/run-risk-score", response_model=RiskScoreResponse)
+@app.post("/run-risk-score", response_model=RiskScoreResponse)
 def run_risk_score(payload: RiskScoreRequest) -> RiskScoreResponse:
     enriched_payload = _enrich_context_with_sc_check(payload)
     prompt = _build_prompt(enriched_payload)
@@ -258,4 +263,10 @@ def run_risk_score(payload: RiskScoreRequest) -> RiskScoreResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        root_path=_root_path,
+    )

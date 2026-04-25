@@ -3,37 +3,53 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${SCRIPT_DIR}"
-SESSION_NAME="${1:-tngd-backend}"
+SERVICE_NAME="${1:-tngd-backend}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 VENV_DIR="${VENV_DIR:-${APP_DIR}/.venv}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
-if ! command -v screen >/dev/null 2>&1; then
-  echo "screen is not installed. Install it first (e.g. sudo apt-get install -y screen)."
-  exit 1
-fi
-
-if ! command -v python3.10 >/dev/null 2>&1; then
-  echo "python3.10 not found. Install Python 3.10 before deploying."
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+  echo "${PYTHON_BIN} not found. Install Python before deploying."
   exit 1
 fi
 
 if [[ ! -d "${VENV_DIR}" ]]; then
-  python3.10 -m venv "${VENV_DIR}"
+  "${PYTHON_BIN}" -m venv "${VENV_DIR}"
 fi
 
 source "${VENV_DIR}/bin/activate"
 python -m pip install --upgrade pip
 pip install -r "${APP_DIR}/requirements.txt"
 
-if screen -list | rg -q "[[:space:]]${SESSION_NAME}[[:space:]]"; then
-  echo "Stopping existing screen session: ${SESSION_NAME}"
-  screen -S "${SESSION_NAME}" -X quit
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "systemctl not found. This script requires systemd."
+  exit 1
 fi
 
-CMD="cd \"${APP_DIR}\" && source \"${VENV_DIR}/bin/activate\" && uvicorn main:app --host ${HOST} --port ${PORT}"
-screen -dmS "${SESSION_NAME}" bash -lc "${CMD}"
+cat <<EOF | sudo tee "${SERVICE_FILE}" >/dev/null
+[Unit]
+Description=TNGD Backend API (${SERVICE_NAME})
+After=network.target
 
-echo "Backend deployed in screen session: ${SESSION_NAME}"
-echo "Attach: screen -r ${SESSION_NAME}"
-echo "List sessions: screen -ls"
+[Service]
+Type=simple
+User=${USER}
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=${VENV_DIR}/bin/uvicorn main:app --host ${HOST} --port ${PORT}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}" >/dev/null
+sudo systemctl restart "${SERVICE_NAME}"
+
+echo "Backend deployed as systemd service: ${SERVICE_NAME}"
+echo "Status: sudo systemctl status ${SERVICE_NAME}"
+echo "Logs:   sudo journalctl -u ${SERVICE_NAME} -f"
