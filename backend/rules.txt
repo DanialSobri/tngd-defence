@@ -1,0 +1,86 @@
+RISK SCORING POLICY (v1)
+
+Purpose
+- Score recipient trust from 0 to 100.
+- Route payment action based on score bands.
+- Preserve genuine SME transactions while reducing scam losses.
+
+Recipient categories
+1) Known bad
+- Blacklisted by TNG, Bank Negara, NSRC, or CCID.
+- Always hard block.
+
+2) Known good
+- Verified TNG merchant, SSM-registered business, government body, or utility.
+- Usually allow, unless strong negative risk overrides.
+
+3) Grey zone
+- Unverified SME, individual seller, hawker, new account, or P2P recipient.
+- Evaluate with confidence scoring (not binary only).
+
+Signal scoring (additive)
+- verified_tng_merchant: +40
+- ssm_registered_business: +25
+- account_age: +5 to +20
+- transaction_history_volume: +5 to +20
+- sender_prior_history_with_recipient: +30
+- network_reputation: +10 to +20
+- blacklist_match: -100
+- mule_pattern_signals: -30 to -60
+- recent_fraud_reports: -50
+- suspicious_naming: -10 to -30
+
+Scoring formula
+- trust_score_raw = sum(all signal contributions)
+- trust_score = clamp(trust_score_raw, 0, 100)
+
+Routing decision
+- 80 to 100: TRUSTED
+  - action: ALLOW
+  - user_message: Normal flow, no friction.
+
+- 50 to 79: LIKELY_SAFE
+  - action: ALLOW_WITH_WARNING
+  - user_message: "First time paying this merchant. Confirm the amount."
+
+- 30 to 49: UNCERTAIN
+  - action: ALLOW_WITH_VERIFICATION
+  - user_message: Additional verification required.
+
+- 10 to 29: SUSPICIOUS
+  - action: COOL_OFF_OR_GUARDIAN_VERIFICATION
+  - user_message: Cooling-off and/or guardian verification is required.
+
+- 0 to 9: HIGH_RISK
+  - action: BLOCK
+  - user_message: "This account has been flagged. Transfer cancelled."
+
+Agent output contract (STRICT)
+- Return JSON only.
+- Do not wrap JSON in markdown fences.
+- Do not include explanatory text outside JSON.
+
+Expected JSON schema
+{
+  "trust_score": 0,
+  "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+  "decision_band": "TRUSTED|LIKELY_SAFE|UNCERTAIN|SUSPICIOUS|HIGH_RISK",
+  "action": "ALLOW|ALLOW_WITH_WARNING|ALLOW_WITH_VERIFICATION|COOL_OFF_OR_GUARDIAN_VERIFICATION|BLOCK",
+  "reasons": [
+    "short reason 1",
+    "short reason 2"
+  ],
+  "signal_breakdown": {
+    "verified_tng_merchant": 0,
+    "ssm_registered_business": 0,
+    "account_age": 0,
+    "transaction_history_volume": 0,
+    "sender_prior_history_with_recipient": 0,
+    "network_reputation": 0,
+    "blacklist_match": 0,
+    "mule_pattern_signals": 0,
+    "recent_fraud_reports": 0,
+    "suspicious_naming": 0
+  },
+  "recommendation": "clear next step"
+}
